@@ -1,0 +1,21 @@
+# Python 
+__pycache__/
+*.pyc
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Database (Don't push your local DB)
+smart_notes.db
+
+# User Uploads (Don't push your private PDFs)
+uploads/
+
+# Environment Variables
+.env
+
+# Editor stuff
+.vscode/
+.idea/
