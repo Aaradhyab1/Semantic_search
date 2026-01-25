@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String
-from database import Base # This connects to the 'Base' we created in database.py
+from .database import Base # This connects to the 'Base' we created in database.py
 
 class User(Base):
     __tablename__ = "users" # This is the name of the actual table in the .db file

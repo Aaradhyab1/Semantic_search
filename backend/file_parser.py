@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import cv2
 from pdf2image import convert_from_bytes
-from ocr_utils import preprocess_image, run_ocr
+#from .ocr_utils import preprocess_image, run_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +17,13 @@ less than MIN_TEXT_LENGTH, it falls back to OCR. Meaning that the pdf that was u
 """
 
 def extract_text(file: UploadFile) -> str:
-
+    file.file.seek(0)
     filename = file.filename.lower()
 
     try:
         if filename.endswith(".pdf"):
-            text = _extract_pdf_text(file)
-            if len(text.strip()) < MIN_TEXT_LENGTH:
-                logger.info("PDF appears scanned. Falling back to OCR.")
-                return _extract_pdf_ocr(file)
-            return text
+            # We strictly use standard text extraction now
+            return _extract_pdf_text(file)
 
         elif filename.endswith(".docx"):
             return _extract_docx(file)
@@ -34,16 +31,13 @@ def extract_text(file: UploadFile) -> str:
         elif filename.endswith(".txt"):
             return _extract_txt(file)
 
-        elif filename.endswith((".png", ".jpg", ".jpeg")):
-            return _extract_image_ocr(file)
-
         else:
-            raise ValueError("Unsupported file type")
+            # If someone uploads an image, we handle it gracefully instead of crashing
+            return "OCR is currently disabled. Please upload a text-based PDF, Docx, or TXT file."
 
     except Exception as e:
         logger.exception("Text extraction failed")
         raise RuntimeError("Failed to extract text") from e
-
 
 # Functions for extracting texts from different file formats
 
