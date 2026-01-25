@@ -1,9 +1,13 @@
 fastapi
 uvicorn
+sqlalchemy
+passlib[bcrypt]
+python-jose[cryptography]
 python-multipart
 sentence-transformers
 faiss-cpu
-numpy
 pdfplumber
 python-docx
-services
+paddleocr
+opencv-python
+pdf2image
