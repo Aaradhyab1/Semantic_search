@@ -29,13 +29,15 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Configure the SDK with the API key
 genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], 
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,42 +84,66 @@ class SearchQuery(BaseModel):
 # --- 4. RAG GENERATION LOGIC ---
 def get_ai_answer(query: str, search_results: list):
     """
-    Constructs a prompt with retrieved context and generates a clean, pointer-based response.
+    Constructs a prompt with retrieved context and generates a clean response.
     """
     context_parts = []
     for i, res in enumerate(search_results):
-        context_parts.append(f"[Source {i+1}: {res['source']}]\n{res['text']}")
+        # We label the source clearly so the AI can clean the "shabby" raw text
+        context_parts.append(f"--- STUDY MATERIAL {i+1} (Source: {res['source']}) ---\n{res['text']}")
     
     context_text = "\n\n".join(context_parts)
     
-    # Structured prompt for cleaner, pointer-based output
+    # Strict prompt to eliminate "shabby" noise like '9122024' or course codes
     prompt = f"""
-    SYSTEM: You are a professional academic assistant. Answer the user's question clearly.
-    TASK: Use ONLY the provided Study Notes to answer.
+    SYSTEM: You are a professional Engineering Professor. 
+    TASK: Answer the student's question based ONLY on the provided Study Notes.
     
-    OUTPUT FORMAT:
-    - Use clean bullet points (pointers).
-    - Use bold headers for different sections.
-    - Ignore administrative noise (dates like 9122024, slide numbers, headers).
-    - Provide a concise summary first, followed by detailed pointers.
+    STRICT CLEANING RULES:
+    1. REMOVE NOISE: Ignore slide headers, university names, course codes, and timestamps like '9122024'.
+    2. STRUCTURE: Use clean, short bullet points (pointers) for clarity.
+    3. FORMATTING: **Bold** key technical concepts.
+    4. HEADERS: Use '###' for major conceptual sections.
+    5. CITE: End every point with its source number, e.g., [Source 1].
 
-    CITATION RULE: Cite every fact using [Source X].
-
-    STUDY NOTES CONTEXT:
+    STUDY NOTES:
     {context_text}
 
-    USER QUESTION: {query}
+    STUDENT QUESTION: {query}
     """
     
-    try:
-        # Initialize the model directly here to avoid configuration mismatches
-        ai_model = genai.GenerativeModel('gemini-1.5-flash')
-        response = ai_model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        # Log the error for debugging
-        print(f"AI Error: {str(e)}")
-        return "The AI is currently processing your request. Please try your query again in a moment."
+    models_to_try = ['gemini-2.0-flash', 'gemini-2.0-flash-exp']
+    
+    for model_name in models_to_try:
+        try:
+            print(f"Attempting generation with {model_name}...")
+            model = genai.GenerativeModel(model_name=model_name)
+            
+            response = model.generate_content(
+                prompt,
+                safety_settings=[
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                ]
+            )
+            
+            if response and response.text:
+                return response.text
+                
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error with {model_name}: {error_msg}")
+            if "429" in error_msg and model_name != models_to_try[-1]:
+                print("Rate limit hit. Switching to fallback model...")
+                continue
+                
+            if "429" in error_msg:
+                 return "⚠️ AI Rate Limit Exceeded. You represent the Free Tier! Please wait ~30 seconds and try again."
+            
+            return f"AI Logic Error: {error_msg}. (Ensure your API key is correct)."
+            
+    return "The AI retrieved relevant data but could not generate a clean summary."
 
 # --- 5. ROUTES ---
 
@@ -125,7 +151,7 @@ def get_ai_answer(query: str, search_results: list):
 def signup(data: LoginRequest, db: Session = Depends(get_db)):
     existing_user = db.query(models.User).filter(models.User.username == data.username).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username already taken, homie!")
+        raise HTTPException(status_code=400, detail="Username already taken!")
     new_user = models.User(username=data.username, hashed_password=hash_password(data.password))
     db.add(new_user); db.commit(); db.refresh(new_user)
     return {"message": "User created successfully!"}
@@ -143,7 +169,7 @@ async def search_notes(data: SearchQuery, current_user: str = Depends(get_curren
     search_results = vector_store.search(data.query, top_k=5)
     
     if not search_results:
-        return {"ai_answer": "No relevant matches found. Upload more notes!", "matches": []}
+        return {"ai_answer": "No relevant matches found. Try uploading more detailed notes!", "matches": []}
 
     ai_answer = get_ai_answer(data.query, search_results)
 
@@ -166,6 +192,7 @@ async def upload_file(file: UploadFile = File(...), current_user: str = Depends(
     chunks = chunk_text(cleaned_text)
     embeddings = embed_texts(chunks)
     
+    # Add to FAISS with the filename for source tracking
     vector_store.add(chunks, embeddings, filename=file.filename)
         
     return {"filename": file.filename, "chunks_created": len(chunks)}

@@ -197,6 +197,17 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
+  // Helper to format text with bolding
+  const renderFormattedText = (text) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} className="text-blue-600 dark:text-blue-400">{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 h-16 flex items-center px-6 justify-between">
@@ -265,7 +276,7 @@ const Dashboard = ({ onLogout }) => {
             </form>
           </div>
 
-          {/* AI Answer Section - Formatted for clean pointers */}
+          {/* AI Answer Section */}
           {aiAnswer && (
             <div className="bg-white dark:bg-gray-800 border-l-4 border-blue-500 p-6 rounded-r-xl shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-500 relative group">
               <div className="flex items-center justify-between mb-4">
@@ -284,14 +295,14 @@ const Dashboard = ({ onLogout }) => {
               <div className="text-gray-800 dark:text-gray-200 leading-relaxed text-sm space-y-3">
                 {aiAnswer.split('\n').map((line, i) => {
                   const isBullet = line.trim().startsWith('*') || line.trim().startsWith('-') || /^\d+\./.test(line.trim());
-                  const isHeader = line.trim().startsWith('#');
+                  const isHeader = line.trim().startsWith('###');
                   
-                  if (isHeader) return <h4 key={i} className="font-bold text-blue-600 dark:text-blue-400 mt-4 uppercase text-xs tracking-wider">{line.replace(/#/g, '').trim()}</h4>;
+                  if (isHeader) return <h4 key={i} className="font-bold text-blue-600 dark:text-blue-400 mt-4 uppercase text-xs tracking-wider border-b dark:border-gray-700 pb-1">{line.replace(/#/g, '').trim()}</h4>;
                   
                   return (
-                    <p key={i} className={`${isBullet ? "ml-4 pl-3 border-l-2 border-blue-100 dark:border-gray-700 italic text-gray-700 dark:text-gray-300" : ""} ${line.trim() === "" ? "h-2" : ""}`}>
-                      {line.replace(/^[*|-]\s*/, '')}
-                    </p>
+                    <div key={i} className={`${isBullet ? "ml-4 pl-3 border-l-2 border-blue-100 dark:border-gray-700 italic text-gray-700 dark:text-gray-300" : ""} ${line.trim() === "" ? "h-2" : ""}`}>
+                      {renderFormattedText(line.replace(/^[*|-]\s*/, ''))}
+                    </div>
                   );
                 })}
               </div>
@@ -299,23 +310,32 @@ const Dashboard = ({ onLogout }) => {
           )}
 
           {results.length > 0 && (
-            <div className="space-y-4">
-              <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] ml-1">Evidence Chunks</h3>
-              {results.map((match, i) => (
-                <div key={i} className="p-4 bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm hover:border-blue-400/50 transition-colors group">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center space-x-2">
-                       <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-2 py-1 rounded-full uppercase tracking-tighter">
-                         {match.source}
-                       </span>
-                    </div>
-                    <span className="text-[10px] text-gray-400 font-mono">Rank #{i + 1}</span>
+            <div className="space-y-4 pt-4 border-t dark:border-gray-700">
+              <details className="group">
+                <summary className="cursor-pointer list-none flex items-center space-x-2 text-gray-500 hover:text-blue-600 transition-colors">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em]">View Reference Sources ({results.length})</span>
+                  <div className="group-open:rotate-180 transition-transform duration-200">
+                    <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                   </div>
-                  <p className="text-gray-600 dark:text-gray-400 text-xs leading-relaxed whitespace-pre-wrap italic">
-                    {match.text.length > 300 ? `${match.text.substring(0, 300)}...` : match.text}
-                  </p>
+                </summary>
+                <div className="mt-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  {results.map((match, i) => (
+                    <div key={i} className="p-4 bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm border-l-4 border-l-gray-300 dark:border-l-gray-600">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-2 py-1 rounded-full uppercase tracking-tighter">
+                          {match.source}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-mono">Rank #{i + 1}</span>
+                      </div>
+                      <p className="text-gray-600 dark:text-gray-400 text-xs leading-relaxed italic">
+                        {match.text}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </details>
             </div>
           )}
         </div>
@@ -325,25 +345,32 @@ const Dashboard = ({ onLogout }) => {
 };
 
 const App = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved) setIsDark(saved === 'dark');
-    if (localStorage.getItem('token')) setIsAuthenticated(true);
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setIsDark(true);
+    }
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDark);
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   }, [isDark]);
 
   return (
-    <>
+    <div className={isDark ? 'dark' : ''}>
       <ThemeToggle isDark={isDark} toggle={() => setIsDark(!isDark)} />
-      {isAuthenticated ? <Dashboard onLogout={() => setIsAuthenticated(false)} /> : <Login onLogin={() => setIsAuthenticated(true)} />}
-    </>
+      {isAuthenticated ? (
+        <Dashboard onLogout={() => setIsAuthenticated(false)} />
+      ) : (
+        <Login onLogin={() => setIsAuthenticated(true)} />
+      )}
+    </div>
   );
 };
 

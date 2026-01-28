@@ -11,3 +11,5 @@ python-docx
 paddleocr
 opencv-python
 pdf2image
+google-generativeai
+python-dotenv
