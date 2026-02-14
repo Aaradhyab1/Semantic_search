@@ -1,83 +1,71 @@
-import faiss
 import os
+import faiss
 import pickle
-import logging
-from .embeddings import embed_query
+import numpy as np
+from .embeddings import embed_texts 
 
-logger = logging.getLogger(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "..", "data") 
+INDEX_FILE = os.path.join(DATA_DIR, "faiss_index.bin")
+METADATA_FILE = os.path.join(DATA_DIR, "metadata.pkl")
 
-FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "data/faiss.index")
-# New path for the metadata (text chunks + filenames)
-METADATA_PATH = os.getenv("METADATA_PATH", "data/faiss_metadata.pkl")
-
-os.makedirs(os.path.dirname(FAISS_INDEX_PATH), exist_ok=True)
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
 
 class VectorStore:
     def __init__(self):
-        self.index = None
-        self.metadata = []  # Stores [{"text": "...", "source": "filename.pdf"}, ...]
-        self._load_index()
+        self.dimension = 384 
+        self.index = faiss.IndexFlatL2(self.dimension)
+        self.metadata = [] 
+        
+        if os.path.exists(INDEX_FILE) and os.path.exists(METADATA_FILE):
+            print(f"Loading existing index from {INDEX_FILE}...")
+            self.index = faiss.read_index(INDEX_FILE)
+            with open(METADATA_FILE, "rb") as f:
+                self.metadata = pickle.load(f)
+        else:
+            print("No existing index found. Starting fresh.")
 
-    def _load_index(self):
-        # 1. Load the FAISS vector index
-        if os.path.exists(FAISS_INDEX_PATH):
-            try:
-                self.index = faiss.read_index(FAISS_INDEX_PATH)
-                logger.info("FAISS index loaded from disk")
-            except Exception:
-                logger.exception("Failed to load FAISS index")
-                self.index = None
-
-        # 2. Load the associated metadata (text + sources)
-        if os.path.exists(METADATA_PATH):
-            try:
-                with open(METADATA_PATH, "rb") as f:
-                    self.metadata = pickle.load(f)
-                logger.info("Metadata loaded from disk")
-            except Exception:
-                logger.exception("Failed to load metadata")
-                self.metadata = []
-
-    def _save_index(self):
-        # Save the vectors
-        if self.index is not None:
-            faiss.write_index(self.index, FAISS_INDEX_PATH)
-        # Save the metadata using pickle
-        with open(METADATA_PATH, "wb") as f:
-            pickle.dump(self.metadata, f)
-
-    def add(self, chunks: list[str], embeddings, filename: str):
+    def add(self, chunks, embeddings, filename):
         if not chunks:
             return
-
-        dim = embeddings.shape[1]
-        if self.index is None:
-            # Using Inner Product (IP) similarity
-            self.index = faiss.IndexFlatIP(dim)
-
-        self.index.add(embeddings)
+            
+        vector_data = np.array(embeddings).astype('float32')
+        self.index.add(vector_data)
         
-        # Link each chunk to its source filename
+      
         for chunk in chunks:
             self.metadata.append({
                 "text": chunk,
                 "source": filename
             })
+            
         
-        self._save_index()
+        print(f"Saving {len(chunks)} chunks to disk...")
+        faiss.write_index(self.index, INDEX_FILE)
+        with open(METADATA_FILE, "wb") as f:
+            pickle.dump(self.metadata, f)
+        print("✅ Index Saved Successfully.")
 
-    def search(self, query: str, top_k: int = 5) -> list[dict]:
-        if self.index is None:
-            return []
-
-        query_vec = embed_query(query)
-        scores, indices = self.index.search(query_vec, top_k)
-
+    def search(self, query_text, top_k=3):
+    
+        print(f"Searching for: {query_text}")
+        query_embedding = embed_texts([query_text])[0]
+        
+        search_vector = np.array([query_embedding]).astype('float32')
+        distances, indices = self.index.search(search_vector, top_k)
+        
         results = []
-        for idx in indices[0]:
-            if 0 <= idx < len(self.metadata):
-                results.append(self.metadata[idx]) # Returns {"text": ..., "source": ...}
+        found_indices = indices[0]
+        found_distances = distances[0]
 
+        for i, idx in enumerate(found_indices):
+            if idx != -1 and idx < len(self.metadata):
+                result = self.metadata[idx]
+                score = found_distances[i]
+                print(f"Match found: '{result['source']}' (Distance: {score:.4f})")
+                results.append(result)
+        
         return results
 
 vector_store = VectorStore()

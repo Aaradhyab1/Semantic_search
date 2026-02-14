@@ -1,10 +1,9 @@
 from sqlalchemy import Column, Integer, String
-from .database import Base # This connects to the 'Base' we created in database.py
+from .database import Base 
 
 class User(Base):
-    __tablename__ = "users" # This is the name of the actual table in the .db file
+    __tablename__ = "users" 
 
-    # These are our table columns
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)

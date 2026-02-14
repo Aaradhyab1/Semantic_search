@@ -1,6 +1,5 @@
 import os
 import shutil
-import google.generativeai as genai
 from fastapi import FastAPI, UploadFile, File, Header, Depends, HTTPException, status
 from pathlib import Path
 from pydantic import BaseModel
@@ -19,6 +18,7 @@ from .preprocessing import clean_text
 from .chunking import chunk_text
 from .embeddings import embed_texts
 from .vector_storing import vector_store
+from .local_llm import get_ai_summary
 
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -27,11 +27,6 @@ load_dotenv(dotenv_path=env_path)
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# Configure the SDK with the API key
-genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI()
 
@@ -83,67 +78,53 @@ class SearchQuery(BaseModel):
 
 # --- 4. RAG GENERATION LOGIC ---
 def get_ai_answer(query: str, search_results: list):
-    """
-    Constructs a prompt with retrieved context and generates a clean response.
-    """
     context_parts = []
     for i, res in enumerate(search_results):
-        # We label the source clearly so the AI can clean the "shabby" raw text
-        context_parts.append(f"--- STUDY MATERIAL {i+1} (Source: {res['source']}) ---\n{res['text']}")
+        # We limit each chunk to 2500 chars to avoid overflowing the token limit
+        clean_chunk = res['text'].replace("\n", " ").strip()[:2500]
+        context_parts.append(f"--- SOURCE {i+1} ({res['source']}) ---\n{clean_chunk}")
     
     context_text = "\n\n".join(context_parts)
     
-    # Strict prompt to eliminate "shabby" noise like '9122024' or course codes
-    prompt = f"""
-    SYSTEM: You are a professional Engineering Professor. 
-    TASK: Answer the student's question based ONLY on the provided Study Notes.
+    system_prompt = """
+    You are a professional Engineering Professor. 
+    Your goal is to answer the Student's Question using ONLY the provided Study Notes.
     
-    STRICT CLEANING RULES:
-    1. REMOVE NOISE: Ignore slide headers, university names, course codes, and timestamps like '9122024'.
-    2. STRUCTURE: Use clean, short bullet points (pointers) for clarity.
-    3. FORMATTING: **Bold** key technical concepts.
-    4. HEADERS: Use '###' for major conceptual sections.
-    5. CITE: End every point with its source number, e.g., [Source 1].
-
-    STUDY NOTES:
-    {context_text}
-
-    STUDENT QUESTION: {query}
+    STRICT RULES:
+    1.  **Answer Directly:** Start with the answer. Do not say "Here is the answer".
+    2.  **No Hallucinations:** If the answer is not in the notes, say "I couldn't find that specific information in the uploaded notes."
+    3.  **Clean Up:** Ignore messy OCR text like "9122024", headers, or page numbers.
+    4.  **Formatting:** - Use **Bold** for key terms.
+        - Use bullet points for lists.
+        - Keep paragraphs short (3-4 sentences).
+    5.  **Citations:** End key points with [Source X].
     """
-    
-    models_to_try = ['gemini-2.0-flash', 'gemini-2.0-flash-exp']
-    
-    for model_name in models_to_try:
-        try:
-            print(f"Attempting generation with {model_name}...")
-            model = genai.GenerativeModel(model_name=model_name)
-            
-            response = model.generate_content(
-                prompt,
-                safety_settings=[
-                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-                ]
-            )
-            
-            if response and response.text:
-                return response.text
-                
-        except Exception as e:
-            error_msg = str(e)
-            print(f"Error with {model_name}: {error_msg}")
-            if "429" in error_msg and model_name != models_to_try[-1]:
-                print("Rate limit hit. Switching to fallback model...")
-                continue
-                
-            if "429" in error_msg:
-                 return "⚠️ AI Rate Limit Exceeded. You represent the Free Tier! Please wait ~30 seconds and try again."
-            
-            return f"AI Logic Error: {error_msg}. (Ensure your API key is correct)."
-            
-    return "The AI retrieved relevant data but could not generate a clean summary."
+
+    # 3. Call Groq API
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": f"STUDY NOTES:\n{context_text}\n\nSTUDENT QUESTION: {query}",
+                }
+            ],
+            model="llama3-8b-8192", # Fast and smart
+            temperature=0.3,        # Low temperature = Less gibberish
+            max_tokens=1024,
+        )
+
+        return chat_completion.choices[0].message.content
+
+    except RateLimitError:
+        return "⚠️ System is busy (Rate Limit Reached). Please wait 30 seconds and try again."
+    except Exception as e:
+        print(f"Groq API Error: {e}")
+        return "Sorry, I encountered an error generating the response."
 
 # --- 5. ROUTES ---
 
@@ -166,17 +147,32 @@ async def login(data: OAuth2PasswordRequestForm = Depends(), db: Session = Depen
 
 @app.post("/search")
 async def search_notes(data: SearchQuery, current_user: str = Depends(get_current_user)):
-    search_results = vector_store.search(data.query, top_k=5)
+    # 1. Retrieve Raw Chunks (Limit to 3 for local speed)
+    search_results = vector_store.search(data.query, top_k=3)
     
     if not search_results:
-        return {"ai_answer": "No relevant matches found. Try uploading more detailed notes!", "matches": []}
+        return {
+            "user": current_user, 
+            "ai_answer": "No relevant notes found.", 
+            "matches": []
+        }
 
-    ai_answer = get_ai_answer(data.query, search_results)
+    # 2. GENERATE: Use Local Llama/Mistral
+    # We pass the query and results to the function in local_llm.py
+    ai_answer = get_ai_summary(data.query, search_results)
+
+    # 3. Clean up References for Frontend
+    seen_sources = set()
+    unique_matches = []
+    for match in search_results:
+        if match['source'] not in seen_sources:
+            unique_matches.append(match)
+            seen_sources.add(match['source'])
 
     return {
         "user": current_user,
         "ai_answer": ai_answer,
-        "matches": search_results 
+        "matches": unique_matches 
     }
 
 @app.post("/upload")

@@ -4,17 +4,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "all-MiniLM-L6-v2"         # Produces sentence or paragraph embeddings of 384 dimensions
-
-# Trying to load the model. If it fails, the server will not start.
+MODEL_NAME = "all-MiniLM-L6-v2"         
 
 try:
     _model = SentenceTransformer(MODEL_NAME)
 except Exception:
     logger.exception("Failed to load embedding model")
     raise
-
-# embed function coverts chunk from the file into a numpy array of numerical vectors
 
 def embed_texts(texts: list[str]) -> np.ndarray:
     return _model.encode(
@@ -23,7 +19,6 @@ def embed_texts(texts: list[str]) -> np.ndarray:
         normalize_embeddings=True
     )
 
-# embed_query function converts a query entered by the user into a numpy array of numerical vectors
 
 def embed_query(query: str) -> np.ndarray:
     return _model.encode(
