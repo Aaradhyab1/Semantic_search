@@ -1,22 +1,38 @@
-# --- Project Specific ---
+# --- Project Specific (Backend Data) ---
 # Database (SQLite)
-smart_notes.db
+*.db
+*.sqlite3
 
-# User Uploads (Private PDFs)
-uploads/
+# User Uploads (Private PDFs/PPTs)
+# Keeps the folder structure but ignores files inside
+backend/uploads/*
+!backend/uploads/.gitkeep
 
-# AI/Vector Data (Don't push FAISS index or pickle metadata)
-data/
+# AI/Vector Data (FAISS Index & Metadata)
+# We don't want to push the vector database
+backend/data/
+faiss_index.bin
+metadata.pkl
 
-# Environment Variables (Security)
+# Local Large Language Models (GGUF files are huge!)
+# This is crucial so you don't try to push a 4GB file to GitHub
+backend/models/
+*.gguf
+*.bin
+
+# Environment Variables (Security Risk!)
 .env
+backend/.env
+frontend/.env
 
-# --- Python ---
+# --- Python (Backend) ---
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
 .python-version
+.coverage
+htmlcov/
 
 # --- Virtual Environments ---
 .venv/
@@ -25,16 +41,18 @@ env/
 ENV/
 
 # --- Frontend (React) ---
-node_modules/
-build/
-dist/
-.eslintcache
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.eslintcache
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnp.*
 
-# --- Editor & OS ---
+# --- Editor & OS System Files ---
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+Desktop.ini
