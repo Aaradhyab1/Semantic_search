@@ -9,3 +9,7 @@ An end-to-end Retrieval-Augmented Generation (RAG) platform that transforms stat
 * **AI-Synthesized Answers:** Generates clean, pointer-based summaries with exact source citations to prevent AI hallucinations.
 * **Secure Authentication:** Fully isolated user environments protected by secure JWT (JSON Web Token) authentication and hashed passwords.
 * **Modern UI/UX:** Responsive React dashboard with drag-and-drop file uploads, dark/light mode toggles, and seamless clipboard integration.
+
+**Backend Engine**
+* **Framework:** Python / FastAPI
+* **Vector Database:** FAISS (Facebook AI Similarity Search)
