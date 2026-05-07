@@ -19,3 +19,10 @@ An end-to-end Retrieval-Augmented Generation (RAG) platform that transforms stat
 **Frontend Client**
 * **Framework:** React.js
 * **Styling:** Tailwind CSS
+
+## 🚀 Architecture Flow
+
+1. **Ingestion:** User uploads a PDF. The backend extracts text, cleans formatting noise (headers, timestamps), and splits it into logical chunks.
+2. **Embedding & Indexing:** Text chunks are converted into dense vector representations and stored in a user-specific FAISS index.
+3. **Retrieval:** User queries the system. The query is vectorized, and FAISS retrieves the top `K` most semantically similar chunks.
+4. **Generation:** The retrieved chunks are passed as strict context to the Gemini model, which generates a beautifully formatted, cited response.
