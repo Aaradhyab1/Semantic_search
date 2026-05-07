@@ -15,3 +15,7 @@ An end-to-end Retrieval-Augmented Generation (RAG) platform that transforms stat
 * **Vector Database:** FAISS (Facebook AI Similarity Search)
 *  **Database:** SQLite with SQLAlchemy ORM
 * **Security:** Passlib (bcrypt) & Python-JOSE (JWT)
+
+**Frontend Client**
+* **Framework:** React.js
+* **Styling:** Tailwind CSS
